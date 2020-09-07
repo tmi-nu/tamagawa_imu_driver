@@ -29,13 +29,7 @@ int main(int argc, char ** argv)
 
   TagSerialDriver driver;
 
-  // Initialize and open serial port
-  if (!driver.initialize()) return -1;
-
   ros::spin();
-
-  // Close serial port
-  driver.finalize();
 
   return 0;
 }

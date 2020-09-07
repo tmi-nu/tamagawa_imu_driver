@@ -24,12 +24,11 @@
 
 #include <string>
 
-#include <boost/asio.hpp>
+#include <asio.hpp>
+#include <asio/steady_timer.hpp>
 
 #include <diagnostic_updater/diagnostic_updater.h>
 #include <sensor_msgs/Imu.h>
-
-namespace as = boost::asio;
 
 class TagSerialDriver
 {
@@ -40,15 +39,9 @@ public:
   TagSerialDriver();
 
   /**
-   * @brief initialize and open serial port.
-   * @return true on success or false on failure
+   * @brief destructor
    */
-  bool initialize();
-
-  /**
-   * @brief close serial port.
-   */
-  void finalize();
+  ~TagSerialDriver();
 
 private:
   using DiagStatus = diagnostic_msgs::DiagnosticStatus;
@@ -64,14 +57,20 @@ private:
    * @param [in] error Error argument of a handler
    * @param [in] bytes_transfered Bytes transferred argument of a handler
    */
-  void onRead(const boost::system::error_code & error, const std::size_t bytes_transfered);
+  void onRead(const asio::error_code & error, const std::size_t bytes_transfered);
+
+  /**
+   * @brief Handler to be called when the timer expires.
+   * @param [in] error Result of operation
+   */
+  void onReadTimer(const asio::error_code & error);
 
   /**
    * @brief Handler to be called when the write operation completes.
    * @param [in] error Error argument of a handler
    * @param [in] bytes_transfered Bytes transferred argument of a handler
    */
-  void onWrite(const boost::system::error_code & error, std::size_t bytes_transfered);
+  void onWrite(const asio::error_code & error, const std::size_t bytes_transfered);
 
   /**
    * @brief timer callback
@@ -80,22 +79,33 @@ private:
   void onTimer(const ros::TimerEvent & event);
 
   /**
- * @brief verify checksum
- * @param [in] data start of message
- * @return true on success or false on failure
- */
+   * @brief initialize and open serial port.
+   */
+  void initialize();
+
+  /**
+   * @brief close serial port.
+   */
+  void finalize();
+
+  /**
+   * @brief verify checksum
+   * @param [in] data start of message
+   * @return true on success or false on failure
+   */
   bool verifyChecksum(const std::string & data);
 
   ros::NodeHandle nh_{""};    //!< @brief ros node handle
   ros::NodeHandle pnh_{"~"};  //!< @brief private ros node handle
 
-  ros::Publisher pub_;        //!< @brief publisher for IMU data
+  ros::Publisher pub_imu_;    //!< @brief publisher for IMU data
   sensor_msgs::Imu imu_msg_;  //!< @brief IMU message
   std::string imu_frame_id_;  //!< @brief frame ID for sensor data
   std::string port_;          //!< @brief serial port name
-  as::io_service io_;         //!< @brief facilities of custom asynchronous services
-  boost::shared_ptr<as::serial_port> serial_port_;  //!< @brief wrapper over serial port
-  as::streambuf buffer_;                            //!< @brief Received data
+  asio::io_service io_;       //!< @brief facilities of custom asynchronous services
+  std::shared_ptr<asio::serial_port> serial_port_;  //!< @brief wrapper over serial port
+  std::shared_ptr<asio::steady_timer> read_timer_;  //!< @brief timer based on the steady clock
+  asio::streambuf buffer_;                          //!< @brief Received data
   bool is_checksum_ok_;                  //!< @brief flag if checksum error is occuring or not
   uint64_t receive_count_;               //!< @brief counter of received data
   uint16_t imu_status_;                  //!< @brief  IMU status

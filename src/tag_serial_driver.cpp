@@ -58,7 +58,7 @@ TagSerialDriver::TagSerialDriver() : receive_count_(0)
   pnh_.param<std::string>("imu_frame_id", imu_frame_id_, "tamagawa/imu_link");
   pnh_.param<std::string>("port", port_, "/dev/imu");
 
-  pub_ = pnh_.advertise<sensor_msgs::Imu>("imu/data_raw", 1000);
+  pub_imu_ = pnh_.advertise<sensor_msgs::Imu>("imu/data_raw", 1000);
 
   updater_.add("imu_data", this, &TagSerialDriver::checkStatus);
   updater_.setHardwareID("tamagawa");
@@ -70,47 +70,61 @@ TagSerialDriver::TagSerialDriver() : receive_count_(0)
   imu_msg_.orientation.w = 1.0;
 
   timer_ = pnh_.createTimer(ros::Rate(1.0), &TagSerialDriver::onTimer, this);
+
+  // Initialize and open serial port
+  initialize();
 }
 
-bool TagSerialDriver::initialize()
+TagSerialDriver::~TagSerialDriver()
+{
+  // Close serial port
+  finalize();
+}
+
+void TagSerialDriver::initialize()
 {
   // Preparation for a subsequent run() invocation
   io_.reset();
-  serial_port_ = boost::shared_ptr<as::serial_port>(new as::serial_port(io_));
+  serial_port_ = std::make_shared<asio::serial_port>(io_);
+  read_timer_ = std::make_shared<asio::steady_timer>(io_);
 
   // Open the serial port using the specified device name
   try {
     serial_port_->open(port_);
-  } catch (const boost::system::system_error & e) {
-    ROS_ERROR("open error: %s", e.what());
-    return false;
+  } catch (const asio::system_error & e) {
+    throw std::runtime_error(fmt::format("Could not open serial port: {}", e.what()));
   }
 
   // Set options on the serial port
-  serial_port_->set_option(as::serial_port_base::baud_rate(115200));
-  serial_port_->set_option(as::serial_port_base::character_size(8));
+  serial_port_->set_option(asio::serial_port_base::baud_rate(115200));
+  serial_port_->set_option(asio::serial_port_base::character_size(8));
   serial_port_->set_option(
-    as::serial_port_base::flow_control(as::serial_port_base::flow_control::none));
-  serial_port_->set_option(as::serial_port_base::parity(as::serial_port_base::parity::none));
-  serial_port_->set_option(as::serial_port_base::stop_bits(as::serial_port_base::stop_bits::one));
+    asio::serial_port_base::flow_control(asio::serial_port_base::flow_control::none));
+  serial_port_->set_option(asio::serial_port_base::parity(asio::serial_port_base::parity::none));
+  serial_port_->set_option(
+    asio::serial_port_base::stop_bits(asio::serial_port_base::stop_bits::one));
 
-  boost::thread thr_io(boost::bind(&as::io_service::run, &io_));
+  // Set the timer's expiry time relative to now
+  read_timer_->expires_from_now(std::chrono::seconds(3));
+  // Start an asynchronous wait on the timer
+  read_timer_->async_wait(
+    boost::bind(&TagSerialDriver::onReadTimer, this, asio::placeholders::error));
+
+  boost::thread thr_io(boost::bind(&asio::io_service::run, &io_));
 
   // Send BIN data request
   std::string data = "$TSC,BIN,30*02\r\n";
 
   serial_port_->async_write_some(
-    as::buffer(data), boost::bind(
-                        &TagSerialDriver::onWrite, this, as::placeholders::error,
-                        as::placeholders::bytes_transferred));
+    asio::buffer(data), boost::bind(
+                          &TagSerialDriver::onWrite, this, asio::placeholders::error,
+                          asio::placeholders::bytes_transferred));
 
-  as::async_read_until(
+  asio::async_read_until(
     *serial_port_, buffer_, "\n",
     boost::bind(
-      &TagSerialDriver::onRead, this, as::placeholders::error,
-      as::placeholders::bytes_transferred));
-
-  return true;
+      &TagSerialDriver::onRead, this, asio::placeholders::error,
+      asio::placeholders::bytes_transferred));
 }
 
 void TagSerialDriver::finalize()
@@ -122,7 +136,7 @@ void TagSerialDriver::finalize()
 void TagSerialDriver::checkStatus(diagnostic_updater::DiagnosticStatusWrapper & stat)
 {
   if (receive_count_ <= 0) {
-    stat.summary(DiagStatus::STALE, "Not Received");
+    stat.summary(DiagStatus::WARN, "Not Received");
     return;
   }
 
@@ -141,8 +155,7 @@ void TagSerialDriver::checkStatus(diagnostic_updater::DiagnosticStatusWrapper & 
   stat.summary(DiagStatus::OK, "OK");
 }
 
-void TagSerialDriver::onRead(
-  const boost::system::error_code & error, const std::size_t bytes_transfered)
+void TagSerialDriver::onRead(const asio::error_code & error, const std::size_t bytes_transfered)
 {
   if (error) {
     ROS_ERROR("Read error: %s", error.message().c_str());
@@ -152,6 +165,9 @@ void TagSerialDriver::onRead(
     const std::string data = oss.str();
 
     if (boost::starts_with(data, "$TSC,BIN,") && data.length() == 58) {
+      // Data received, so cancel timer operation
+      read_timer_->cancel();
+
       imu_msg_.header.stamp = ros::Time::now();
 
       int raw_data = ((((data[15] << 8) & 0xFFFFFF00) | (data[16] & 0x000000FF)));
@@ -172,7 +188,7 @@ void TagSerialDriver::onRead(
 
       imu_status_ = ((data[13] << 8) & 0x0000FF00) | (data[14] & 0x000000FF);
 
-      pub_.publish(imu_msg_);
+      pub_imu_.publish(imu_msg_);
 
       // verify checksum
       is_checksum_ok_ = verifyChecksum(data);
@@ -182,17 +198,29 @@ void TagSerialDriver::onRead(
   }
 
   // asynchronously read data
-  as::async_read_until(
+  asio::async_read_until(
     *serial_port_, buffer_, "\n",
     boost::bind(
-      &TagSerialDriver::onRead, this, as::placeholders::error,
-      as::placeholders::bytes_transferred));
+      &TagSerialDriver::onRead, this, asio::placeholders::error,
+      asio::placeholders::bytes_transferred));
 }
 
-void TagSerialDriver::onWrite(
-  const boost::system::error_code & error, const std::size_t bytes_transfered)
+void TagSerialDriver::onReadTimer(const asio::error_code & error)
 {
-  ROS_DEBUG("%ld bytes transfered.", bytes_transfered);
+  if (error) {
+    ROS_DEBUG("Timer canceled. Data received successfully.");
+  } else {
+    throw std::runtime_error("Timer expired, Could not receive any data from sensor.");
+  }
+}
+
+void TagSerialDriver::onWrite(const asio::error_code & error, const std::size_t bytes_transfered)
+{
+  if (error) {
+    ROS_ERROR("Write error: %s", error.message().c_str());
+  } else {
+    ROS_DEBUG("%ld bytes transfered.", bytes_transfered);
+  }
 }
 
 void TagSerialDriver::onTimer(const ros::TimerEvent & event) { updater_.force_update(); }
