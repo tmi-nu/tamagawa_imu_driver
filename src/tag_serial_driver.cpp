@@ -158,7 +158,10 @@ void TagSerialDriver::checkStatus(diagnostic_updater::DiagnosticStatusWrapper & 
 void TagSerialDriver::onRead(const asio::error_code & error, const std::size_t bytes_transfered)
 {
   if (error) {
-    ROS_ERROR("Read error: %s", error.message().c_str());
+    if (error != asio::error::operation_aborted) {
+      ROS_ERROR("Read error: %s", error.message().c_str());
+    }
+    return;
   } else {
     std::ostringstream oss;
     oss << &buffer_;
@@ -210,7 +213,9 @@ void TagSerialDriver::onReadTimer(const asio::error_code & error)
   if (error) {
     ROS_DEBUG("Timer canceled. Data received successfully.");
   } else {
-    throw std::runtime_error("Timer expired, Could not receive any data from sensor.");
+    ROS_WARN("Read timeout. Retrying to connect.");
+    finalize();
+    initialize();
   }
 }
 

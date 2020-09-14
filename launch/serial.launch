@@ -1,7 +1,5 @@
 <launch>
-  <arg name="respawn" default="true" />
-  <arg name="respawn_delay" default="30" />
-  <node pkg="tamagawa_imu_driver" name="tag_serial_driver" type="tag_serial_driver" respawn="$(arg respawn)" respawn_delay="$(arg respawn_delay)">
+  <node pkg="tamagawa_imu_driver" name="tag_serial_driver" type="tag_serial_driver">
     <param name="port" value="/dev/imu" />
     <param name="imu_frame_id" value="tamagawa/imu_link" />
   </node>
