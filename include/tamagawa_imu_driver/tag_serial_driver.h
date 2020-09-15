@@ -89,6 +89,11 @@ private:
   void finalize();
 
   /**
+   * @brief receive data from serial port.
+   */
+  void receive();
+
+  /**
    * @brief verify checksum
    * @param [in] data start of message
    * @return true on success or false on failure

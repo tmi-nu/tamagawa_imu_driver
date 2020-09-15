@@ -120,17 +120,23 @@ void TagSerialDriver::initialize()
                           &TagSerialDriver::onWrite, this, asio::placeholders::error,
                           asio::placeholders::bytes_transferred));
 
-  asio::async_read_until(
-    *serial_port_, buffer_, "\n",
-    boost::bind(
-      &TagSerialDriver::onRead, this, asio::placeholders::error,
-      asio::placeholders::bytes_transferred));
+  receive();
 }
 
 void TagSerialDriver::finalize()
 {
   serial_port_->close();
   io_.stop();
+}
+
+void TagSerialDriver::receive()
+{
+  // asynchronously read data
+  asio::async_read_until(
+    *serial_port_, buffer_, "\n",
+    boost::bind(
+      &TagSerialDriver::onRead, this, asio::placeholders::error,
+      asio::placeholders::bytes_transferred));
 }
 
 void TagSerialDriver::checkStatus(diagnostic_updater::DiagnosticStatusWrapper & stat)
@@ -200,12 +206,7 @@ void TagSerialDriver::onRead(const asio::error_code & error, const std::size_t b
     }
   }
 
-  // asynchronously read data
-  asio::async_read_until(
-    *serial_port_, buffer_, "\n",
-    boost::bind(
-      &TagSerialDriver::onRead, this, asio::placeholders::error,
-      asio::placeholders::bytes_transferred));
+  receive();
 }
 
 void TagSerialDriver::onReadTimer(const asio::error_code & error)
