@@ -59,6 +59,10 @@
 
 #include <sys/ioctl.h>
 
+#include <tf2/transform_datatypes.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+
+
 std::string device = "/dev/ttyUSB0";
 std::string imu_type = "noGPS";
 std::string rate = "50";
@@ -94,7 +98,7 @@ int serial_setup(const char * device)
 
 void receive_ver_req(const std_msgs::Int32::ConstPtr & msg)
 {
-  char ver_req[] = "$TSC,VER*29\x0d\x0a";
+  char ver_req[] = "$TSC,VER\x0d\x0a";
   int ver_req_data = write(fd, ver_req, sizeof(ver_req));
   ROS_INFO("Send Version Request:%s", ver_req);
 }
@@ -109,7 +113,7 @@ void receive_offset_cancel_req(const std_msgs::Int32::ConstPtr & msg)
 
 void receive_heading_reset_req(const std_msgs::Int32::ConstPtr & msg)
 {
-  char heading_reset_req[] = "$TSC,HRST*29\x0d\x0a";
+  char heading_reset_req[] = "$TSC,HRST\x0d\x0a";
   int heading_reset_req_data = write(fd, heading_reset_req, sizeof(heading_reset_req));
   ROS_INFO("Send Heading reset Request:%s", heading_reset_req);
 }
@@ -192,6 +196,21 @@ int main(int argc, char ** argv)
         imu_msg.linear_acceleration.y = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
         raw_data = ((((rbuf[25] << 8) & 0xFFFFFF00) | (rbuf[26] & 0x000000FF)));
         imu_msg.linear_acceleration.z = raw_data * (100 / pow(2, 15));  // LSB & unit [m/s^2]
+
+
+        double roll,pitch,yaw;
+        raw_data = ((((rbuf[27] << 8) & 0xFFFFFF00) | (rbuf[28] & 0x000000FF)));
+        roll=
+          raw_data * (180 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg] => [rad]
+        raw_data = ((((rbuf[29] << 8) & 0xFFFFFF00) | (rbuf[30] & 0x000000FF)));
+        pitch=
+          raw_data * (180 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg] => [rad]
+        raw_data = ((((rbuf[31] << 8) & 0xFFFFFF00) | (rbuf[32] & 0x000000FF)));
+        yaw=
+          raw_data * (180 / pow(2, 15)) * M_PI / 180;  // LSB & unit [deg] => [rad]
+        tf2::Quaternion quta;
+        quta.setRPY(roll, pitch, yaw);
+        imu_msg.orientation = tf2::toMsg(quta);
 
         pub.publish(imu_msg);
 

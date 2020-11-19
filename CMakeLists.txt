@@ -5,6 +5,9 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
   can_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
 )
 
 catkin_package(
