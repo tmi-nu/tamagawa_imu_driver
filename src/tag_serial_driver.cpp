@@ -62,10 +62,14 @@
 #include <tf2/transform_datatypes.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
+#include <boost/asio.hpp>
 
 std::string device = "/dev/ttyUSB0";
 std::string imu_type = "noGPS";
 std::string rate = "50";
+
+boost::asio::io_service io;
+boost::asio::serial_port sp(io, device.c_str());
 
 struct termios old_conf_tio;
 struct termios conf_tio;
@@ -98,24 +102,24 @@ int serial_setup(const char * device)
 
 void receive_ver_req(const std_msgs::Int32::ConstPtr & msg)
 {
-  char ver_req[] = "$TSC,VER\x0d\x0a";
-  int ver_req_data = write(fd, ver_req, sizeof(ver_req));
-  ROS_INFO("Send Version Request:%s", ver_req);
+  std::string ver_req = "$TSC,VER\x0d\x0a";
+  sp.write_some(boost::asio::buffer(ver_req));
+  ROS_INFO("Send Version Request:%s", ver_req.c_str());
 }
 
 void receive_offset_cancel_req(const std_msgs::Int32::ConstPtr & msg)
 {
   char offset_cancel_req[32];
   sprintf(offset_cancel_req, "$TSC,OFC,%d\x0d\x0a", msg->data);
-  int offset_cancel_req_data = write(fd, offset_cancel_req, sizeof(offset_cancel_req));
+  sp.write_some(boost::asio::buffer(offset_cancel_req));
   ROS_INFO("Send Offset Cancel Request:%s", offset_cancel_req);
 }
 
 void receive_heading_reset_req(const std_msgs::Int32::ConstPtr & msg)
 {
-  char heading_reset_req[] = "$TSC,HRST\x0d\x0a";
-  int heading_reset_req_data = write(fd, heading_reset_req, sizeof(heading_reset_req));
-  ROS_INFO("Send Heading reset Request:%s", heading_reset_req);
+  std::string heading_reset_req = "$TSC,HRST\x0d\x0a";
+  sp.write_some(boost::asio::buffer(heading_reset_req));
+  ROS_INFO("Send Heading reset Request:%s", heading_reset_req.c_str());
 }
 
 void shutdown_cmd(int sig)
@@ -126,8 +130,6 @@ void shutdown_cmd(int sig)
   ros::shutdown();
 }
 
-#include <boost/asio.hpp>
-using namespace boost::asio;
 
 int main(int argc, char ** argv)
 {
@@ -145,17 +147,15 @@ int main(int argc, char ** argv)
   std::string port = "/dev/ttyUSB0";
   nh.getParam("port", port);
 
-  io_service io;
-  serial_port serial_port(io, port.c_str());
-  serial_port.set_option(serial_port_base::baud_rate(115200));
-  serial_port.set_option(serial_port_base::character_size(8));
-  serial_port.set_option(serial_port_base::flow_control(serial_port_base::flow_control::none));
-  serial_port.set_option(serial_port_base::parity(serial_port_base::parity::none));
-  serial_port.set_option(serial_port_base::stop_bits(serial_port_base::stop_bits::one));
+  sp.set_option(boost::asio::serial_port_base::baud_rate(115200));
+  sp.set_option(boost::asio::serial_port_base::character_size(8));
+  sp.set_option(boost::asio::serial_port_base::flow_control(boost::asio::serial_port_base::flow_control::none));
+  sp.set_option(boost::asio::serial_port_base::parity(boost::asio::serial_port_base::parity::none));
+  sp.set_option(boost::asio::serial_port_base::stop_bits(boost::asio::serial_port_base::stop_bits::one));
 
   std::string wbuf = "$TSC,BIN,30\x0d\x0a";
   std::size_t length;
-  serial_port.write_some(buffer(wbuf));
+  sp.write_some(boost::asio::buffer(wbuf));
 
   ros::Rate loop_rate(30);
 
@@ -168,7 +168,7 @@ int main(int argc, char ** argv)
     ros::spinOnce();
 
     boost::asio::streambuf response;
-    boost::asio::read_until(serial_port, response, "\n");
+    boost::asio::read_until(sp, response, "\n");
     std::string rbuf(
       boost::asio::buffers_begin(response.data()), boost::asio::buffers_end(response.data()));
 
