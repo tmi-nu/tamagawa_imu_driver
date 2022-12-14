@@ -65,7 +65,7 @@ sensor_msgs::msg::Imu imu_msg;
 void receive_CAN(const can_msgs::msg::Frame::ConstSharedPtr msg)
 {
   if (msg->id == 0x319) {
-    imu_msg.header.frame_id = "imu";
+    imu_msg.header.frame_id = "tamagawa/imu_link";
     imu_msg.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
 
     counter = msg->data[1] + (msg->data[0] << 8);
