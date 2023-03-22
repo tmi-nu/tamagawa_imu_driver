@@ -181,7 +181,7 @@ int main(int argc, char ** argv)
     length = rbuf.size();
 
     if (length > 0) {
-      if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',' && length == 58) {
+      if (rbuf[5] == 'B' && rbuf[6] == 'I' && rbuf[7] == 'N' && rbuf[8] == ',' && length == 60) {
         imu_msg.header.frame_id = imu_frame_id;
         imu_msg.header.stamp = node->now();
 
